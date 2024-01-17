@@ -8,7 +8,12 @@ class SegModel(pl.LightningModule):
     def __init__(self):
         super(SegModel, self).__init__()
         self.learning_rate = 1e-3
-        self.net = torchvision.models.densenet.densenet161(pretrained=True, num_classes=2)
+        self.net = torchvision.models.densenet.densenet161(pretrained=True)
+        
+        # Replace the final classification layer for binary segmentation
+        in_features = self.net.classifier.in_features
+        self.net.classifier = nn.Conv2d(in_features, 2, kernel_size=1)
+        
         self.criterion = nn.CrossEntropyLoss()
         self.evaluator = SMAPIoUMetric()
 
@@ -55,6 +60,10 @@ class SegModel(pl.LightningModule):
             sync_dist=True,
         )
         self.log(f"val_mIoU", metrics["mIoU"], sync_dist=True)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
+
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
