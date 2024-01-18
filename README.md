@@ -10,3 +10,5 @@ They both have their advantages and such, both tackling the vanishing gradient p
 
 So far its still in testing.
  refer back to this link if stuck https://github.com/ReML-AI/ucc-ai-quest-baseline
+
+Colab link: https://colab.research.google.com/gist/andyliu129/67580bcad0449fa27b8339e8fefb058f/ai-quest.ipynb#scrollTo=B8tgfcQFZgjc
