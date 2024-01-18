@@ -4,23 +4,27 @@ import torchvision
 import lightning.pytorch as pl
 from metrics import SMAPIoUMetric
 
-
 class SegModel(pl.LightningModule):
     def __init__(self):
         super(SegModel, self).__init__()
         self.learning_rate = 1e-3
-        self.net = torchvision.models.segmentation.fcn_resnet50(num_classes=2)
+        self.net = torchvision.models.densenet.densenet161(pretrained=True)
+        
+        # Replace the final classification layer for binary segmentation
+        in_features = self.net.classifier.in_features
+        self.net.classifier = nn.Conv2d(in_features, 2, kernel_size=1)
+        
         self.criterion = nn.CrossEntropyLoss()
         self.evaluator = SMAPIoUMetric()
 
     def forward(self, x):
-        return self.net(x)
+        return self.net(x)["features"]
 
     def training_step(self, batch, batch_nb):
         img, mask = batch
         img = img.float()
         mask = mask.long()
-        out = self.forward(img)["out"]
+        out = self.forward(img)
         loss = self.criterion(out, mask)
         self.log("loss", loss, prog_bar=True, sync_dist=True)
         return loss
@@ -29,7 +33,7 @@ class SegModel(pl.LightningModule):
         img, mask = batch
         img = img.float()
         mask = mask.long()
-        out = self.forward(img)["out"]
+        out = self.forward(img)
         loss = self.criterion(out, mask)
 
         probs = torch.softmax(out, dim=1)
@@ -56,6 +60,10 @@ class SegModel(pl.LightningModule):
             sync_dist=True,
         )
         self.log(f"val_mIoU", metrics["mIoU"], sync_dist=True)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)
+
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.net.parameters(), lr=self.learning_rate)

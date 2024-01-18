@@ -4,33 +4,8 @@ from collections import OrderedDict
 from typing import Any, List, Optional, Sequence, Union, Dict
 from abc import ABCMeta, abstractmethod
 
-
 class BaseMetric(metaclass=ABCMeta):
-    """Base class for a metric.
-
-    The metric first processes each batch of data_samples and predictions,
-    and appends the processed results to the results list. Then it
-    collects all results together from all ranks if distributed training
-    is used. Finally, it computes the metrics of the entire dataset.
-
-    A subclass of class:`BaseMetric` should assign a meaningful value to the
-    class attribute `default_prefix`. See the argument `prefix` for details.
-
-    Args:
-        collect_device (str): Device name used for collecting results from
-            different ranks during distributed training. Must be 'cpu' or
-            'gpu'. Defaults to 'cpu'.
-        prefix (str, optional): The prefix that will be added in the metric
-            names to disambiguate homonymous metrics of different evaluators.
-            If prefix is not provided in the argument, self.default_prefix
-            will be used instead. Default: None
-        collect_dir: (str, optional): Synchronize directory for collecting data
-            from different ranks. This argument should only be configured when
-            ``collect_device`` is 'cpu'. Defaults to None.
-            `New in version 0.7.3.`
-    """
-
-    default_prefix: Optional[str] = None
+    default_prefix: Optional[str] = "base_metric"
 
     def __init__(
         self,
@@ -39,9 +14,7 @@ class BaseMetric(metaclass=ABCMeta):
         collect_dir: Optional[str] = None,
     ) -> None:
         if collect_dir is not None and collect_device != "cpu":
-            raise ValueError(
-                "`collec_dir` could only be configured when " "`collect_device='cpu'`"
-            )
+            raise ValueError("`collec_dir` could only be configured when `collect_device='cpu'`")
 
         self.collect_device = collect_device
         self.results: List[Any] = []
@@ -50,75 +23,19 @@ class BaseMetric(metaclass=ABCMeta):
 
     @abstractmethod
     def process(self, data_batch: Any, data_samples: Sequence[dict]) -> None:
-        """Process one batch of data samples and predictions. The processed
-        results should be stored in ``self.results``, which will be used to
-        compute the metrics when all batches have been processed.
-
-        Args:
-            data_batch (Any): A batch of data from the dataloader.
-            data_samples (Sequence[dict]): A batch of outputs from
-                the model.
-        """
+        pass
 
     @abstractmethod
     def compute_metrics(self, results: list) -> dict:
-        """Compute the metrics from processed results.
-
-        Args:
-            results (list): The processed results of each batch.
-
-        Returns:
-            dict: The computed metrics. The keys are the names of the metrics,
-            and the values are corresponding results.
-        """
+        pass
 
     def evaluate(self, size: int) -> dict:
-        """Evaluate the model performance of the whole dataset after processing
-        all batches.
-
-        Args:
-            size (int): Length of the entire validation dataset. When batch
-                size > 1, the dataloader may pad some data samples to make
-                sure all ranks have the same length of dataset slice. The
-                ``collect_results`` function will drop the padded data based on
-                this size.
-
-        Returns:
-            dict: Evaluation metrics dict on the val dataset. The keys are the
-            names of the metrics, and the values are corresponding results.
-        """
-
-        metrics = self.compute_metrics(self.results)  # type: ignore
-
-        # reset the results list
+        metrics = self.compute_metrics(self.results)
         self.results.clear()
         return metrics
 
 
 class IoUMetric(BaseMetric):
-    """IoU evaluation metric.
-
-    Args:
-        ignore_index (int): Index that will be ignored in evaluation.
-            Default: 255.
-        iou_metrics (list[str] | str): Metrics to be calculated, the options
-            includes 'mIoU', 'mDice' and 'mFscore'.
-        nan_to_num (int, optional): If specified, NaN values will be replaced
-            by the numbers defined by the user. Default: None.
-        beta (int): Determines the weight of recall in the combined score.
-            Default: 1.
-        collect_device (str): Device name used for collecting results from
-            different ranks during distributed training. Must be 'cpu' or
-            'gpu'. Defaults to 'cpu'.
-        output_dir (str): The directory for output prediction. Defaults to
-            None.
-
-        prefix (str, optional): The prefix that will be added in the metric
-            names to disambiguate homonymous metrics of different evaluators.
-            If prefix is not provided in the argument, self.default_prefix
-            will be used instead. Defaults to None.
-    """
-
     def __init__(
         self,
         ignore_index: int = 255,
@@ -151,21 +68,6 @@ class IoUMetric(BaseMetric):
         )
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
-        """Compute the metrics from processed results.
-
-        Args:
-            results (list): The processed results of each batch.
-
-        Returns:
-            Dict[str, float]: The computed metrics. The keys are the names of
-                the metrics, and the values are corresponding results. The key
-                mainly includes aAcc, mIoU, mAcc, mDice, mFscore, mPrecision,
-                mRecall.
-        """
-
-        # convert list of tuples to tuple of lists, e.g.
-        # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to
-        # ([A_1, ..., A_n], ..., [D_1, ..., D_n])
         results = tuple(zip(*results))
         assert len(results) == 4
 
@@ -185,7 +87,6 @@ class IoUMetric(BaseMetric):
 
         class_names = self.classes
 
-        # summary table
         ret_metrics_summary = OrderedDict(
             {
                 ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
@@ -199,7 +100,6 @@ class IoUMetric(BaseMetric):
             else:
                 metrics["m" + key] = val
 
-        # each class table
         ret_metrics.pop("aAcc", None)
         ret_metrics_class = OrderedDict(
             {
@@ -219,25 +119,6 @@ class IoUMetric(BaseMetric):
         num_classes: int,
         ignore_index: int,
     ):
-        """Calculate Intersection and Union.
-
-        Args:
-            pred_label (np.ndarray): Prediction segmentation map
-                or predict result filename. The shape is (H, W).
-            label (np.ndarray): Ground truth segmentation map
-                or label filename. The shape is (H, W).
-            num_classes (int): Number of categories.
-            ignore_index (int): Index that will be ignored in evaluation.
-
-        Returns:
-            np.ndarray: The intersection of prediction and ground truth
-                histogram on all classes.
-            np.ndarray: The union of prediction and ground truth histogram on
-                all classes.
-            np.ndarray: The prediction histogram on all classes.
-            np.ndarray: The ground truth histogram on all classes.
-        """
-
         mask = label != ignore_index
         pred_label = pred_label[mask]
         label = label[mask]
@@ -266,39 +147,7 @@ class IoUMetric(BaseMetric):
         nan_to_num: Optional[int] = None,
         beta: int = 1,
     ):
-        """Calculate evaluation metrics
-        Args:
-            total_area_intersect (np.ndarray): The intersection of prediction
-                and ground truth histogram on all classes.
-            total_area_union (np.ndarray): The union of prediction and ground
-                truth histogram on all classes.
-            total_area_pred_label (np.ndarray): The prediction histogram on
-                all classes.
-            total_area_label (np.ndarray): The ground truth histogram on
-                all classes.
-            metrics (List[str] | str): Metrics to be evaluated, 'mIoU' and
-                'mDice'.
-            nan_to_num (int, optional): If specified, NaN values will be
-                replaced by the numbers defined by the user. Default: None.
-            beta (int): Determines the weight of recall in the combined score.
-                Default: 1.
-        Returns:
-            Dict[str, np.ndarray]: per category evaluation metrics,
-                shape (num_classes, ).
-        """
-
         def f_score(precision, recall, beta=1):
-            """calculate the f-score value.
-
-            Args:
-                precision (float | np.ndarray): The precision value.
-                recall (float | np.ndarray): The recall value.
-                beta (int): Determines the weight of recall in the combined
-                    score. Default: 1.
-
-            Returns:
-                [np.ndarray]: The f-score value.
-            """
             score = (
                 (1 + beta**2)
                 * (precision * recall)
@@ -352,20 +201,6 @@ class IoUMetric(BaseMetric):
 
 class SMAPIoUMetric(IoUMetric):
     def compute_metrics(self, results: list) -> Dict[str, float]:
-        """Compute the metrics from processed results.
-
-        Args:
-            results (list): The processed results of each batch.
-
-        Returns:
-            Dict[str, float]: The computed metrics. The keys are the names of
-                the metrics, and the values are corresponding results. The key
-                mainly includes aAcc, mIoU, mAcc, mDice, mFscore, mPrecision,
-                mRecall.
-        """
-        # convert list of tuples to tuple of lists, e.g.
-        # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to
-        # ([A_1, ..., A_n], ..., [D_1, ..., D_n])
         results = tuple(zip(*results))
         assert len(results) == 4
 
@@ -385,7 +220,6 @@ class SMAPIoUMetric(IoUMetric):
 
         class_names = self.classes
 
-        # summary table
         ret_metrics_summary = OrderedDict(
             {
                 ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
@@ -405,7 +239,6 @@ class SMAPIoUMetric(IoUMetric):
                     continue
                 metrics[f"{class_name}__{ret_metric}"] = np.round(ret_metric_value[class_id] * 100, 2)
 
-        # each class table
         ret_metrics.pop("aAcc", None)
         ret_metrics_class = OrderedDict(
             {
@@ -428,39 +261,7 @@ class SMAPIoUMetric(IoUMetric):
         nan_to_num: Optional[int] = None,
         beta: int = 1,
     ):
-        """Calculate evaluation metrics
-        Args:
-            total_area_intersect (np.ndarray): The intersection of prediction
-                and ground truth histogram on all classes.
-            total_area_union (np.ndarray): The union of prediction and ground
-                truth histogram on all classes.
-            total_area_pred_label (np.ndarray): The prediction histogram on
-                all classes.
-            total_area_label (np.ndarray): The ground truth histogram on
-                all classes.
-            metrics (List[str] | str): Metrics to be evaluated, 'mIoU' and
-                'mDice'.
-            nan_to_num (int, optional): If specified, NaN values will be
-                replaced by the numbers defined by the user. Default: None.
-            beta (int): Determines the weight of recall in the combined score.
-                Default: 1.
-        Returns:
-            Dict[str, np.ndarray]: per category evaluation metrics,
-                shape (num_classes, ).
-        """
-
         def f_score(precision, recall, beta=1):
-            """calculate the f-score value.
-
-            Args:
-                precision (float | np.ndarray): The precision value.
-                recall (float | np.ndarray): The recall value.
-                beta (int): Determines the weight of recall in the combined
-                    score. Default: 1.
-
-            Returns:
-                [np.ndarray]: The f-score value.
-            """
             score = (
                 (1 + beta**2)
                 * (precision * recall)
