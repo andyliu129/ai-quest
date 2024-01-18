@@ -9,3 +9,4 @@ They both have their advantages and such, both tackling the vanishing gradient p
   -Densenet on the other hand focus its dense connectivity when addressing this isssue. Each layer receives an input from all previous layers in the block. This facilitates the flow of the gradient during backpropagation. Simpler terms, it provides multiple paths for the gradient to flow. Another thing I like about using Densenet is the concept of parameter sharing, which means the network becomes more compact and efficient when it comes to the number of parameters needed for it to learn.
 
 So far its still in testing.
+ refer back to this link if stuck https://github.com/ReML-AI/ucc-ai-quest-baseline
